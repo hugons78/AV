@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8" />
+  <!--
+    viewport-fit=cover: allows content under iOS notch/home indicator
+    interactive-widget=resizes-content: Android Chrome shrinks layout when keyboard opens
+  -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
+  <!-- Colours the Android Chrome status bar turquoise -->
+  <meta name="theme-color" content="#4bdbc5" />
+  <title>AV Chat — NOS</title>
+  <link rel="stylesheet" href="https://cdn.nos.pt/common/css/aZoSansWeb.css" />
+  <style>
+
+    /* ─── Design Tokens ─────────────────────────────────────────── */
+    :root {
+      --nos-color-brand-bg-turquoise-500: #4bdbc5;
+      --nos-color-neutral-000:            #ffffff;
+      --nos-color-neutral-100:            #dddee3;
+      --nos-color-text-neutral-900:       #1e1f27;
+      --nos-color-text-neutral-600:       #404149;
+      --nos-color-text-neutral-400:       #74757d;
+      --nos-color-border-neutral-1000:    #000000;
+      --nos-color-border-neutral-600:     #404149;
+      --nos-color-border-neutral-200:     #bbbcc4;
+      --nos-font-size-ui-300:             16px;
+      --nos-font-size-ui-200:             14px;
+      --nos-font-size-text-300:           16px;
+      --font-line-height-ui-300:          24px;
+      --font-line-height-ui-200:          18px;
+      --font-line-height-text-300:        24px;
+      --nos-spacing-fixed-1:              4px;
+      --nos-spacing-fixed-2:              8px;
+      --nos-spacing-fixed-3:              12px;
+      --nos-spacing-fixed-4:              16px;
+      --nos-spacing-fixed-6:              24px;
+      --nos-border-width-1:               1px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html {
+      background: var(--nos-color-brand-bg-turquoise-500);
+      overflow: hidden;
+    }
+
+    /*
+      position: fixed blocks iOS Safari from scrolling the page when
+      the keyboard opens — the widget handles its own layout instead.
+    */
+    body {
+      font-family: 'AzoSansWeb', sans-serif;
+      background: var(--nos-color-brand-bg-turquoise-500);
+      display: flex;
+      justify-content: center;
+      position: fixed;
+      inset: 0;
+      overflow: hidden;
+    }
+
+    /* ─── Widget — full screen on mobile ───────────────────────── */
+    /*
+      position: fixed pins the widget to the visual viewport so that
+      iOS Safari page-scroll (triggered when the keyboard opens) cannot
+      push the header off screen. top/height are kept in sync with
+      visualViewport via JS.
+    */
+    .av-widget {
+      position: fixed;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100%;
+      max-width: 430px;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      background: var(--nos-color-neutral-000);
+      box-shadow: 0px 14px 40px 0px rgba(0, 0, 0, 0.12);
+      overflow: hidden;
+    }
+
+    /* ─── Widget Header ─────────────────────────────────────────── */
+    .widget-header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      flex-shrink: 0;
+      width: 100%;
+      background: var(--nos-color-brand-bg-turquoise-500);
+      box-shadow: 0px 2px 8px 0px rgba(0, 0, 0, 0.08);
+      padding: max(4px, env(safe-area-inset-top, 4px)) 20px 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .widget-header__row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      min-height: 26px; /* 52px top padding + 26px row + 24px bottom = 102px total */
+    }
+
+    /* Title/2XS Medium — AzoSansWeb 500 18px/26px */
+    .widget-header__title {
+      font-family: 'AzoSansWeb', sans-serif;
+      font-weight: 500;
+      font-size: 18px;
+      line-height: 26px;
+      color: var(--nos-color-text-neutral-900);
+      white-space: nowrap;
+    }
+
+    .widget-header__icons {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+
+    .widget-header__icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+
+    .icon-chevron { width: 24px; height: 24px; overflow: hidden; }
+    .icon-close   { width: 32px; height: 32px; overflow: hidden; }
+
+    /* ─── Main scrollable content ───────────────────────────────── */
+    .main-wrapper {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* 20px side margins + 24px top, full width */
+    .component-wrapper {
+      width: 100%;
+      padding: 24px 20px 16px;
+      flex: 1;
+    }
+
+    /* ─── AV Chat ────────────────────────────────────────────────── */
+    .av-chat {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* flex-col, gap-16, items-end → user bubble floats right */
+    .av-interaction {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      align-items: flex-end;
+    }
+
+    /* ─── message-user ──────────────────────────────────────────── */
+    /* grey bubble, TL TR BL = 16px, BR = 0 */
+    .message-user {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      background: var(--nos-color-neutral-100);
+      min-height: 48px;
+      min-width: 160px;
+      max-width: 300px;
+      padding: var(--nos-spacing-fixed-4) var(--nos-spacing-fixed-6);
+      border-radius: var(--nos-spacing-fixed-4)
+                     var(--nos-spacing-fixed-4)
+                     0
+                     var(--nos-spacing-fixed-4);
+    }
+
+    /* UI/Regular (400)/UI8 */
+    .message-user__text {
+      font-family: 'AzoSansWeb', sans-serif;
+      font-weight: 400;
+      font-size: var(--nos-font-size-ui-300);
+      line-height: var(--font-line-height-ui-300);
+      color: var(--nos-color-text-neutral-900);
+      text-align: right;
+    }
+
+    /* ─── AV Response ────────────────────────────────────────────── */
+    .av-response {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      align-items: flex-start;
+      width: 100%;
+    }
+
+    /* ─── AV Message ─────────────────────────────────────────────── */
+    /* Text/Regular (400)/P1 */
+    .av-message__text {
+      font-family: 'AzoSansWeb', sans-serif;
+      font-weight: 400;
+      font-size: var(--nos-font-size-text-300);
+      line-height: var(--font-line-height-text-300);
+      color: var(--nos-color-text-neutral-900);
+    }
+
+    /* ─── CER_CTA ────────────────────────────────────────────────── */
+    .cer-cta {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      align-items: flex-start;
+      width: 100%;
+    }
+
+    /* ─── Button selection animation ────────────────────────────── */
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0);    }
+    }
+
+    .av-interaction--selected {
+      animation: fadeInUp 0.2s ease-out;
+    }
+
+    /* ─── Av Chat Buttons (Type=Title, State=Default) ─────────────  */
+    .av-chat-button {
+      display: inline-flex;
+      align-items: center;
+      background: var(--nos-color-neutral-000);
+      border: var(--nos-border-width-1) solid var(--nos-color-border-neutral-1000);
+      border-radius: var(--nos-spacing-fixed-4);
+      padding: var(--nos-spacing-fixed-4);
+      max-width: 100%;
+      cursor: pointer;
+      appearance: none;
+      text-align: left;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .av-chat-button:hover,
+    .av-chat-button:active {
+      border-color: var(--nos-color-border-neutral-600);
+    }
+
+    .av-chat-button:hover .av-chat-button__title,
+    .av-chat-button:active .av-chat-button__title {
+      color: var(--nos-color-text-neutral-600);
+    }
+
+    /* State=Disabled */
+    .av-chat-button:disabled,
+    .av-chat-button:disabled .av-chat-button__title {
+      border-color: var(--nos-color-border-neutral-200);
+      color: var(--nos-color-text-neutral-400);
+      cursor: default;
+      pointer-events: none;
+    }
+    .av-chat-button:disabled .av-chat-button__title {
+      border: none;
+    }
+
+    /* UI/Bold (700)/UI9 */
+    .av-chat-button__title {
+      font-family: 'AzoSansWeb', sans-serif;
+      font-weight: 700;
+      font-size: var(--nos-font-size-ui-200);
+      line-height: var(--font-line-height-ui-200);
+      color: var(--nos-color-text-neutral-900);
+    }
+
+    /* ─── Input - Chat ───────────────────────────────────────────── */
+    /*
+      flex-shrink: 0 keeps it pinned at the bottom of the flex column.
+      padding-bottom uses env(safe-area-inset-bottom) for iOS home indicator.
+    */
+    .input-chat {
+      flex-shrink: 0;
+      width: 100%;
+      background: var(--nos-color-neutral-000);
+      padding: 0 20px max(16px, env(safe-area-inset-bottom, 16px));
+    }
+
+    /* Visual field container — state=default: grey border, white bg */
+    .input-chat__field {
+      display: flex;
+      align-items: center;
+      gap: var(--nos-spacing-fixed-2);
+      height: 48px;
+      width: 100%;
+      background: var(--nos-color-neutral-000);
+      border: var(--nos-border-width-1) solid var(--nos-color-border-neutral-200);
+      border-radius: var(--nos-spacing-fixed-2);
+      padding: 0 var(--nos-spacing-fixed-3);
+      overflow: hidden;
+    }
+
+    /* Real text input — inherits field dimensions, visually invisible */
+    .input-chat__input {
+      flex: 1;
+      min-width: 0;
+      border: none;
+      outline: none;
+      background: transparent;
+      font-family: 'AzoSansWeb', sans-serif;
+      font-weight: 400;
+      font-size: var(--nos-font-size-ui-300);
+      line-height: var(--font-line-height-ui-300);
+      color: var(--nos-color-text-neutral-900);
+      /* Remove iOS inner shadow on inputs */
+      -webkit-appearance: none;
+    }
+
+    /* Placeholder — state=default colour */
+    .input-chat__input::placeholder {
+      color: var(--nos-color-text-neutral-400);
+    }
+
+    /* Mic icon — visible in state=default */
+    .input-chat__mic {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      width: 24px;
+      height: 24px;
+      cursor: pointer;
+    }
+
+    /* Send button — hidden by default, appears in state=active-web (on focus) */
+    .input-chat__send {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      width: 24px;
+      height: 24px;
+      background: none;
+      border: none;
+      padding: 0;
+      cursor: pointer;
+    }
+
+    /*
+      :focus-within on the field container:
+        - hide mic  → state=default
+        - show send → state=active-web
+    */
+    .input-chat__field:focus-within .input-chat__mic  { display: none; }
+    .input-chat__field:focus-within .input-chat__send { display: flex; }
+
+  </style>
+</head>
+<body>
+
+  <div class="av-widget">
+
+    <!-- ── widget-header ── -->
+    <div class="widget-header">
+      <div class="widget-header__row">
+
+        <span class="widget-header__title">Em que podemos ajudar?</span>
+
+        <div class="widget-header__icons">
+
+          <!-- Chevron — right-pointing rotated 90° = pointing down (minimise) -->
+          <div class="widget-header__icon icon-chevron">
+            <svg width="8" height="13" viewBox="0 0 8 13" fill="none"
+                 style="transform:rotate(90deg);display:block;">
+              <path d="M1 1.5L6.5 6.5L1 11.5"
+                    stroke="#1e1f27" stroke-width="1.5"
+                    stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+
+          <!-- ic_close — plus rotated 45° = × -->
+          <div class="widget-header__icon icon-close">
+            <svg width="21" height="21" viewBox="0 0 21 21" fill="none"
+                 style="transform:rotate(45deg);display:block;">
+              <line x1="10.5" y1="1"  x2="10.5" y2="20"
+                    stroke="#1e1f27" stroke-width="2" stroke-linecap="round"/>
+              <line x1="1"    y1="10.5" x2="20" y2="10.5"
+                    stroke="#1e1f27" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ── main scrollable content ── -->
+    <div class="main-wrapper">
+      <div class="component-wrapper">
+        <div class="av-chat">
+          <div class="av-interaction">
+
+            <!-- message-user: grey bubble, right-aligned -->
+            <div class="message-user">
+              <span class="message-user__text">Preciso do pin do meu tlm</span>
+            </div>
+
+            <!-- AV_response: message + CTA buttons -->
+            <div class="av-response">
+
+              <!-- AV_message: plain left-aligned body text -->
+              <p class="av-message__text">De que número de telemóvel?</p>
+
+              <!-- CER_CTA: stacked choice buttons -->
+              <div class="cer-cta">
+                <button class="av-chat-button">
+                  <span class="av-chat-button__title">A. 931011232</span>
+                </button>
+                <button class="av-chat-button">
+                  <span class="av-chat-button__title">B. 931033345</span>
+                </button>
+                <button class="av-chat-button">
+                  <span class="av-chat-button__title">C. 931017321</span>
+                </button>
+              </div>
+
+            </div><!-- /av-response -->
+
+          </div><!-- /av-interaction -->
+        </div><!-- /av-chat -->
+      </div><!-- /component-wrapper -->
+    </div><!-- /main-wrapper -->
+
+    <!-- ── Input - Chat ── -->
+    <!--
+      state=default  → placeholder text + mic icon
+      state=active-web (on focus) → typed text + send icon
+    -->
+    <div class="input-chat">
+      <div class="input-chat__field">
+
+        <input
+          class="input-chat__input"
+          type="text"
+          placeholder="Escrever para continuar a conversa"
+          autocomplete="off"
+          autocorrect="off"
+          autocapitalize="sentences"
+          enterkeyhint="send"
+        />
+
+        <!-- Mic icon (state=default) -->
+        <div class="input-chat__mic" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <rect x="9" y="2" width="6" height="11" rx="3"
+                  stroke="#1e1f27" stroke-width="1.5"/>
+            <path d="M5 10a7 7 0 0 0 14 0"
+                  stroke="#1e1f27" stroke-width="1.5"
+                  stroke-linecap="round"/>
+            <line x1="12" y1="17" x2="12" y2="21"
+                  stroke="#1e1f27" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="9"  y1="21" x2="15" y2="21"
+                  stroke="#1e1f27" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+
+        <!-- Send button (state=active-web) -->
+        <button class="input-chat__send" aria-label="Enviar">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <path d="M22 2L11 13" stroke="#1e1f27" stroke-width="1.5"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M22 2L15 22L11 13L2 9L22 2Z" stroke="#1e1f27" stroke-width="1.5"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+
+      </div>
+    </div>
+
+  </div><!-- /av-widget -->
+
+  <script>
+    const input = document.querySelector('.input-chat__input');
+    const widget = document.querySelector('.av-widget');
+
+    // ── iOS keyboard: pin widget to visual viewport ─────────────────
+    // When the keyboard opens, iOS scrolls the layout viewport so the
+    // focused input is visible. By tracking visualViewport.offsetTop and
+    // .height we keep the widget glued to what's actually on screen.
+    function syncWidget() {
+      const vv = window.visualViewport;
+      widget.style.top    = vv.offsetTop  + 'px';
+      widget.style.height = vv.height     + 'px';
+    }
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', syncWidget);
+      window.visualViewport.addEventListener('scroll', syncWidget);
+      syncWidget();
+    }
+
+    const VALID_INPUTS = ['a', 'b', 'c', '931011232', '931033345', '931017321'];
+
+    // Keys (lowercased) that trigger an AV response after 1s
+    const AV_RESPONSES = {
+      'a':             'O pin do seu telemóvel 931011232 é <strong>2458</strong>',
+      '931011232':     'O pin do seu telemóvel 931011232 é <strong>2458</strong>',
+      'a. 931011232':  'O pin do seu telemóvel 931011232 é <strong>2458</strong>',
+      'b':             'O pin do seu telemóvel 931033345 é <strong>2345</strong>',
+      '931033345':     'O pin do seu telemóvel 931033345 é <strong>2345</strong>',
+      'b. 931033345':  'O pin do seu telemóvel 931033345 é <strong>2345</strong>',
+      'c':             'O pin do seu telemóvel 931017321 é <strong>1236</strong>',
+      '931017321':     'O pin do seu telemóvel 931017321 é <strong>1236</strong>',
+      'c. 931017321':  'O pin do seu telemóvel 931017321 é <strong>1236</strong>',
+      'lol':           'Estás todo fibrado 🤡 🤟',
+    };
+
+    function addUserBubble(text) {
+      const newInteraction = document.createElement('div');
+      newInteraction.className = 'av-interaction av-interaction--selected';
+      newInteraction.innerHTML = `
+        <div class="message-user">
+          <span class="message-user__text">${text}</span>
+        </div>
+      `;
+      document.querySelector('.av-chat').appendChild(newInteraction);
+      setTimeout(() => {
+        newInteraction.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }, 50);
+    }
+
+    // Creates a fresh CTA buttons group and wires up their click handlers
+    function createCtaGroup() {
+      const cer = document.createElement('div');
+      cer.className = 'cer-cta';
+      cer.innerHTML = `
+        <button class="av-chat-button"><span class="av-chat-button__title">A. 931011232</span></button>
+        <button class="av-chat-button"><span class="av-chat-button__title">B. 931033345</span></button>
+        <button class="av-chat-button"><span class="av-chat-button__title">C. 931017321</span></button>
+      `;
+      cer.querySelectorAll('.av-chat-button').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const selectedText = btn.querySelector('.av-chat-button__title').textContent;
+          btn.closest('.cer-cta').remove();
+          addUserBubble(selectedText);
+          showAvResponse(selectedText);
+        });
+      });
+      return cer;
+    }
+
+    function showAvResponse(key) {
+      const html = AV_RESPONSES[key.trim().toLowerCase()];
+      setTimeout(() => {
+        const block = document.createElement('div');
+        block.className = 'av-interaction av-interaction--selected';
+        if (html) {
+          block.innerHTML = `<div class="av-response"><p class="av-message__text">${html}</p></div>`;
+        } else {
+          // Unknown input → error message + fresh CTA buttons
+          const response = document.createElement('div');
+          response.className = 'av-response';
+          response.innerHTML = `<p class="av-message__text">Não percebi a sua resposta. De que número de telemóvel quer sabe o pin?</p>`;
+          response.appendChild(createCtaGroup());
+          block.appendChild(response);
+        }
+        document.querySelector('.av-chat').appendChild(block);
+        setTimeout(() => block.scrollIntoView({ behavior: 'smooth', block: 'end' }), 50);
+      }, 1000);
+    }
+
+    // ── CTA button click → remove buttons, add bubble ─────────────
+    document.querySelectorAll('.av-chat-button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const selectedText = btn.querySelector('.av-chat-button__title').textContent;
+        document.querySelector('.cer-cta').remove();
+        addUserBubble(selectedText);
+        showAvResponse(selectedText);
+      });
+    });
+
+    // ── Input submit → disable buttons, add bubble ────────────────
+    function handleSubmit() {
+      const trimmed = input.value.trim();
+      if (!trimmed) return;
+
+      document.querySelectorAll('.av-chat-button:not(:disabled)').forEach(btn => { btn.disabled = true; });
+
+      addUserBubble(trimmed);
+      showAvResponse(trimmed);
+
+      input.value = '';
+      input.dispatchEvent(new Event('input'));
+      input.blur();
+    }
+
+    const sendBtn = document.querySelector('.input-chat__send');
+
+    // mousedown fires before blur — preventDefault keeps focus on the input
+    // so :focus-within stays true and the button isn't hidden before the action runs
+    sendBtn.addEventListener('mousedown', e => {
+      e.preventDefault();
+      handleSubmit();
+    });
+
+    // touchend as additional fallback for iOS (in case mousedown doesn't fire)
+    sendBtn.addEventListener('touchend', e => {
+      e.preventDefault();
+      handleSubmit();
+    });
+
+    // Enter key — listen on both keydown and keyup for iOS Safari compatibility
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') handleSubmit(); });
+    input.addEventListener('keyup',   e => { if (e.key === 'Enter') handleSubmit(); });
+  </script>
+
+</body>
+</html>
